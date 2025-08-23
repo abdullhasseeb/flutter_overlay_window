@@ -44,6 +44,8 @@ import io.flutter.plugin.common.BasicMessageChannel;
 import io.flutter.plugin.common.JSONMessageCodec;
 import io.flutter.plugin.common.MethodChannel;
 
+import io.flutter.plugins.GeneratedPluginRegistrant;
+
 public class OverlayService extends Service implements View.OnTouchListener {
     private final int DEFAULT_NAV_BAR_HEIGHT_DP = 48;
     private final int DEFAULT_STATUS_BAR_HEIGHT_DP = 25;
@@ -304,6 +306,12 @@ public class OverlayService extends Service implements View.OnTouchListener {
         if (flutterEngine == null) {
             // Handle the error if engine is not found
             Log.e("OverlayService", "Flutter engine not found, hence creating new flutter engine");
+            // Ensure Flutter loader is initialized (needed when starting from a Service)
+            FlutterInjector instance = FlutterInjector.instance();
+            if (!instance.flutterLoader().initialized()) {
+                instance.flutterLoader().startInitialization(getApplicationContext());
+                instance.flutterLoader().ensureInitializationComplete(getApplicationContext(), null);
+            }
             FlutterEngineGroup engineGroup = new FlutterEngineGroup(this);
             DartExecutor.DartEntrypoint entryPoint = new DartExecutor.DartEntrypoint(
                 FlutterInjector.instance().flutterLoader().findAppBundlePath(),
@@ -311,6 +319,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
             );  // "overlayMain" is custom entry point
 
             flutterEngine = engineGroup.createAndRunEngine(this, entryPoint);
+            // Register all Flutter plugins (required for Platform Views like WebView)
+            GeneratedPluginRegistrant.registerWith(flutterEngine);
 
             // Cache the created FlutterEngine for future use
             FlutterEngineCache.getInstance().put(OverlayConstants.CACHED_TAG, flutterEngine);
