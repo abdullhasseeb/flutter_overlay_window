@@ -84,6 +84,13 @@ public class OverlayService extends Service implements View.OnTouchListener {
     @Override
     public void onDestroy() {
         Log.d("OverLay", "Destroying the overlay window service");
+        // Detach Platform Views controller if present (safe for overlay cases)
+        try {
+            FlutterEngine cached = FlutterEngineCache.getInstance().get(OverlayConstants.CACHED_TAG);
+            if (cached != null) {
+                cached.getPlatformViewsController().detach();
+            }
+        } catch (Throwable ignored) {}
         if (windowManager != null) {
             windowManager.removeView(flutterView);
             windowManager = null;
@@ -321,7 +328,13 @@ public class OverlayService extends Service implements View.OnTouchListener {
             flutterEngine = engineGroup.createAndRunEngine(this, entryPoint);
             // Register all Flutter plugins (required for Platform Views like WebView)
             GeneratedPluginRegistrant.registerWith(flutterEngine);
-
+            // Attach Platform Views controller so the "flutter/platform_views" channel is handled
+            // (required for WebView, Google Maps, etc. when running outside FlutterActivity)
+            flutterEngine.getPlatformViewsController().attach(
+                getApplicationContext(),
+                flutterEngine.getTextureRegistry(),
+                flutterEngine.getDartExecutor()
+            );
             // Cache the created FlutterEngine for future use
             FlutterEngineCache.getInstance().put(OverlayConstants.CACHED_TAG, flutterEngine);
         }
