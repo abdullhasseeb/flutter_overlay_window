@@ -33,20 +33,20 @@ import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
-import io.flutter.embedding.android.FlutterTextureView;
 import io.flutter.embedding.android.FlutterView;
 import io.flutter.FlutterInjector;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.embedding.engine.FlutterEngineCache;
-import io.flutter.embedding.engine.FlutterEngineGroup;
 import io.flutter.embedding.engine.dart.DartExecutor;
 import io.flutter.plugin.common.BasicMessageChannel;
 import io.flutter.plugin.common.JSONMessageCodec;
 import io.flutter.plugin.common.MethodChannel;
 
-import io.flutter.plugins.GeneratedPluginRegistrant;
+import io.flutter.embedding.engine.plugins.util.GeneratedPluginRegister;
+import io.flutter.embedding.android.FlutterSurfaceView;
 
 public class OverlayService extends Service implements View.OnTouchListener {
+    public static volatile boolean platformViewsReady = false; // ADD THIS
     private final int DEFAULT_NAV_BAR_HEIGHT_DP = 48;
     private final int DEFAULT_STATUS_BAR_HEIGHT_DP = 25;
 
@@ -83,6 +83,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
     @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     public void onDestroy() {
+        platformViewsReady = false;
         Log.d("OverLay", "Destroying the overlay window service");
         // Detach Platform Views controller if present (safe for overlay cases)
         try {
@@ -130,7 +131,10 @@ public class OverlayService extends Service implements View.OnTouchListener {
         Log.d("onStartCommand", "Service started");
         FlutterEngine engine = FlutterEngineCache.getInstance().get(OverlayConstants.CACHED_TAG);
         engine.getLifecycleChannel().appIsResumed();
-        flutterView = new FlutterView(getApplicationContext(), new FlutterTextureView(getApplicationContext()));
+        FlutterSurfaceView surface = new FlutterSurfaceView(getApplicationContext(), true);
+        surface.setZOrderOnTop(false);
+        surface.setZOrderMediaOverlay(true);
+        flutterView = new FlutterView(getApplicationContext(), surface);
         flutterView.attachToFlutterEngine(FlutterEngineCache.getInstance().get(OverlayConstants.CACHED_TAG));
         flutterView.setFitsSystemWindows(true);
         flutterView.setFocusable(true);
@@ -149,6 +153,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 int height = call.argument("height");
                 boolean enableDrag = call.argument("enableDrag");
                 resizeOverlay(width, height, enableDrag, result);
+            }else if(call.method.equals("isPlatformViewsReady")){
+                result.success(platformViewsReady);
             }
         });
         overlayMessageChannel.setMessageHandler((message, reply) -> {
@@ -168,12 +174,15 @@ public class OverlayService extends Service implements View.OnTouchListener {
         int dx = startX == OverlayConstants.DEFAULT_XY ? 0 : startX;
         int dy = startY == OverlayConstants.DEFAULT_XY ? -statusBarHeightPx() : startY;
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                WindowSetup.width == -1999 ? -1 : WindowSetup.width,
-                WindowSetup.height != -1999 ? WindowSetup.height : screenHeight(),
+                (WindowSetup.width  == -1999 || WindowSetup.width  == -1) ? -1 : dpToPx(WindowSetup.width),
+                (WindowSetup.height == -1999 || WindowSetup.height == -1) ? -1 : dpToPx(WindowSetup.height),
                 0,
                 -statusBarHeightPx(),
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
-                WindowSetup.flag | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_PHONE,
+                WindowSetup.flag
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                         | WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR
                         | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
@@ -252,8 +261,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private void resizeOverlay(int width, int height, boolean enableDrag, MethodChannel.Result result) {
         if (windowManager != null) {
             WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
-            params.width = (width == -1999 || width == -1) ? -1 : dpToPx(width);
-            params.height = (height != 1999 || height != -1) ? dpToPx(height) : height;
+            params.width  = (width  == -1999 || width  == -1) ? -1 : dpToPx(width);
+            params.height = (height == -1999 || height == -1) ? -1 : dpToPx(height);
             WindowSetup.enableDrag = enableDrag;
             windowManager.updateViewLayout(flutterView, params);
             result.success(true);
@@ -307,36 +316,66 @@ public class OverlayService extends Service implements View.OnTouchListener {
 
     @Override
     public void onCreate() {
+        // Ensure Flutter loader
+        FlutterInjector injector = FlutterInjector.instance();
+        if (!injector.flutterLoader().initialized()) {
+            injector.flutterLoader().startInitialization(getApplicationContext());
+            injector.flutterLoader().ensureInitializationComplete(getApplicationContext(), null);
+        }
+
         // Get the cached FlutterEngine
         FlutterEngine flutterEngine = FlutterEngineCache.getInstance().get(OverlayConstants.CACHED_TAG);
 
         if (flutterEngine == null) {
-            // Handle the error if engine is not found
-            Log.e("OverlayService", "Flutter engine not found, hence creating new flutter engine");
-            // Ensure Flutter loader is initialized (needed when starting from a Service)
-            FlutterInjector instance = FlutterInjector.instance();
-            if (!instance.flutterLoader().initialized()) {
-                instance.flutterLoader().startInitialization(getApplicationContext());
-                instance.flutterLoader().ensureInitializationComplete(getApplicationContext(), null);
-            }
-            FlutterEngineGroup engineGroup = new FlutterEngineGroup(this);
-            DartExecutor.DartEntrypoint entryPoint = new DartExecutor.DartEntrypoint(
-                FlutterInjector.instance().flutterLoader().findAppBundlePath(),
-                "overlayMain"
-            );  // "overlayMain" is custom entry point
+            Log.e("OverlayService", "Flutter engine not found, creating new engine");
 
-            flutterEngine = engineGroup.createAndRunEngine(this, entryPoint);
-            // Register all Flutter plugins (required for Platform Views like WebView)
-            GeneratedPluginRegistrant.registerWith(flutterEngine);
-            // Attach Platform Views controller so the "flutter/platform_views" channel is handled
-            // (required for WebView, Google Maps, etc. when running outside FlutterActivity)
+//            // Ensure Flutter loader is initialized (needed when starting from a Service)
+//            FlutterInjector injector = FlutterInjector.instance();
+//            if (!injector.flutterLoader().initialized()) {
+//                injector.flutterLoader().startInitialization(getApplicationContext());
+//                injector.flutterLoader().ensureInitializationComplete(getApplicationContext(), null);
+//            }
+
+            // 1) Create an engine (not running yet)
+            flutterEngine = new FlutterEngine(getApplicationContext());
+
+            // 2) Attach Platform Views controller BEFORE executing Dart (required for WebView/Maps)
             flutterEngine.getPlatformViewsController().attach(
-                getApplicationContext(),
-                flutterEngine.getTextureRegistry(),
-                flutterEngine.getDartExecutor()
+                    getApplicationContext(),
+                    flutterEngine.getRenderer(),   // FlutterRenderer implements TextureRegistry
+                    flutterEngine.getDartExecutor()
             );
-            // Cache the created FlutterEngine for future use
+            Log.d("OverlayService", "PlatformViewsController attached");
+            platformViewsReady = true;
+
+            Log.d("OverlayService", "PlatformViewsController attached (ready=true)");
+
+            // 3) Register all plugins into this engine (so platform channels are available)
+            GeneratedPluginRegister.registerGeneratedPlugins(flutterEngine);
+
+            // 4) Now execute the overlay entrypoint
+            DartExecutor.DartEntrypoint entryPoint = new DartExecutor.DartEntrypoint(
+                    injector.flutterLoader().findAppBundlePath(),
+                    "overlayMain"
+            );
+            flutterEngine.getDartExecutor().executeDartEntrypoint(entryPoint);
+            Log.d("OverlayService", "overlayMain executed");
+
+            // 5) Cache the created engine for reuse
             FlutterEngineCache.getInstance().put(OverlayConstants.CACHED_TAG, flutterEngine);
+        } else {
+            // Engine exists: ensure PV is attached
+            try {
+                flutterEngine.getPlatformViewsController().attach(
+                        getApplicationContext(),
+                        flutterEngine.getRenderer(),
+                        flutterEngine.getDartExecutor()
+                );
+                platformViewsReady = true;                       // <<==== set true here too
+                Log.d("OverlayService", "PV attached (cached engine)");
+            } catch (Throwable t) {
+                Log.e("OverlayService", "Failed to attach PV on cached engine", t);
+            }
         }
 
         // Create the MethodChannel with the properly initialized FlutterEngine
