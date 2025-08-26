@@ -1,4 +1,7 @@
 package flutter.overlay.window.flutter_overlay_window;
+import android.animation.ValueAnimator;
+import android.animation.AnimatorSet;
+import android.view.animation.AccelerateDecelerateInterpolator;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -152,7 +155,9 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 int width = call.argument("width");
                 int height = call.argument("height");
                 boolean enableDrag = call.argument("enableDrag");
-                resizeOverlay(width, height, enableDrag, result);
+                Integer duration = call.argument("duration"); // <-- new
+                resizeOverlay(width, height, enableDrag, duration, result);
+                if (duration == null) duration = 500;
             }else if(call.method.equals("isPlatformViewsReady")){
                 result.success(platformViewsReady);
             }
@@ -258,18 +263,61 @@ public class OverlayService extends Service implements View.OnTouchListener {
         }
     }
 
-    private void resizeOverlay(int width, int height, boolean enableDrag, MethodChannel.Result result) {
-        if (windowManager != null) {
-            WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
-            params.width  = (width  == -1999 || width  == -1) ? -1 : dpToPx(width);
-            params.height = (height == -1999 || height == -1) ? -1 : dpToPx(height);
-            WindowSetup.enableDrag = enableDrag;
-            windowManager.updateViewLayout(flutterView, params);
-            result.success(true);
-        } else {
-            result.success(false);
+    private void resizeOverlay(int width, int height, boolean enableDrag, int durationMs, MethodChannel.Result result) {
+        if (windowManager == null || flutterView == null) {
+            if (result != null) result.success(false);
+            return;
         }
+
+        final WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
+
+        final int targetW = (width  == -1999 || width  == -1) ? WindowManager.LayoutParams.MATCH_PARENT : dpToPx(width);
+        final int targetH = (height == -1999 || height == -1) ? WindowManager.LayoutParams.MATCH_PARENT : dpToPx(height);
+
+        final int startW = params.width;
+        final int startH = params.height;
+
+        WindowSetup.enableDrag = enableDrag;
+
+        // Optional: hint higher refresh rate (OEM/ROM may ignore for overlays)
+        try {
+            params.preferredRefreshRate = 90f; // API 21+, best-effort
+            windowManager.updateViewLayout(flutterView, params);
+        } catch (Throwable ignored) {}
+
+        // ONE animator driving both width & height to avoid double relayouts per frame
+        final ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+        animator.setDuration(Math.max(0, durationMs));
+        animator.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        animator.addUpdateListener(a -> {
+            if (windowManager == null || flutterView == null) return; // guard if service is stopping
+            final float t = (float) a.getAnimatedValue();
+
+            // lerp once per frame
+            final int w = (startW == WindowManager.LayoutParams.MATCH_PARENT || targetW == WindowManager.LayoutParams.MATCH_PARENT)
+                    ? targetW
+                    : Math.round(startW + (targetW - startW) * t);
+
+            final int h = (startH == WindowManager.LayoutParams.MATCH_PARENT || targetH == WindowManager.LayoutParams.MATCH_PARENT)
+                    ? targetH
+                    : Math.round(startH + (targetH - startH) * t);
+
+            // update BOTH together — one relayout per frame
+            params.width  = w;
+            params.height = h;
+            try {
+                windowManager.updateViewLayout(flutterView, params);
+            } catch (Throwable ignored) {
+                // if closing during animation, ignore
+            }
+        });
+
+        // Ensure we’re on the UI thread
+        flutterView.post(animator::start);
+
+        if (result != null) result.success(true);
     }
+
 
     private void moveOverlay(int x, int y, MethodChannel.Result result) {
         if (windowManager != null) {
