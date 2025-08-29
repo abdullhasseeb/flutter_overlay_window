@@ -18,6 +18,17 @@ void overlayMain() {
   );
 }
 
+@pragma("vm:entry-point")
+void overlay2Main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(
+    const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: TrueCallerOverlay(),
+    ),
+  );
+}
+
 class MyApp extends StatefulWidget {
   const MyApp({Key? key}) : super(key: key);
 

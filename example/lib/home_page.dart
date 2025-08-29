@@ -43,103 +43,160 @@ class _HomePageState extends State<HomePage> {
         title: const Text('Plugin example app'),
       ),
       body: Center(
-        child: Column(
-          children: [
-            TextButton(
-              onPressed: () async {
-                final status = await FlutterOverlayWindow.isPermissionGranted();
-                log("Is Permission Granted: $status");
-              },
-              child: const Text("Check Permission"),
-            ),
-            const SizedBox(height: 10.0),
-            TextButton(
-              onPressed: () async {
-                final bool? res =
-                    await FlutterOverlayWindow.requestPermission();
-                log("status: $res");
-              },
-              child: const Text("Request Permission"),
-            ),
-            const SizedBox(height: 10.0),
-            TextButton(
-              onPressed: () async {
-                if (await FlutterOverlayWindow.isActive()) return;
-                await FlutterOverlayWindow.showOverlay(
-                  enableDrag: true,
-                  overlayTitle: "X-SLAYER",
-                  overlayContent: 'Overlay Enabled',
-                  flag: OverlayFlag.defaultFlag,
-                  visibility: NotificationVisibility.visibilityPublic,
-                  positionGravity: PositionGravity.auto,
-                  height: (MediaQuery.of(context).size.height * 0.6).toInt(),
-                  width: WindowSize.matchParent,
-                  startPosition: const OverlayPosition(0, -259),
-                );
-              },
-              child: const Text("Show Overlay"),
-            ),
-            const SizedBox(height: 10.0),
-            TextButton(
-              onPressed: () async {
-                final status = await FlutterOverlayWindow.isActive();
-                log("Is Active?: $status");
-              },
-              child: const Text("Is Active?"),
-            ),
-            const SizedBox(height: 10.0),
-            TextButton(
-              onPressed: () async {
-                await FlutterOverlayWindow.resizeOverlay(
-                  WindowSize.matchParent,
-                  (MediaQuery.of(context).size.height * 5).toInt(),
-                  false,
-                );
-              },
-              child: const Text("Update Overlay"),
-            ),
-            const SizedBox(height: 10.0),
-            TextButton(
-              onPressed: () {
-                log('Try to close');
-                FlutterOverlayWindow.closeOverlay()
-                    .then((value) => log('STOPPED: alue: $value'));
-              },
-              child: const Text("Close Overlay"),
-            ),
-            const SizedBox(height: 20.0),
-            TextButton(
-              onPressed: () {
-                homePort ??=
-                    IsolateNameServer.lookupPortByName(_kPortNameOverlay);
-                homePort?.send('Send to overlay: ${DateTime.now()}');
-              },
-              child: const Text("Send message to overlay"),
-            ),
-            const SizedBox(height: 20.0),
-            TextButton(
-              onPressed: () {
-                FlutterOverlayWindow.getOverlayPosition().then((value) {
-                  log('Overlay Position: $value');
-                  setState(() {
-                    latestMessageFromOverlay = 'Overlay Position: $value';
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              TextButton(
+                onPressed: () async {
+                  final status = await FlutterOverlayWindow.isPermissionGranted();
+                  log("Is Permission Granted: $status");
+                },
+                child: const Text("Check Permission"),
+              ),
+              const SizedBox(height: 10.0),
+              TextButton(
+                onPressed: () async {
+                  final bool? res = await FlutterOverlayWindow.requestPermission();
+                  log("status: $res");
+                },
+                child: const Text("Request Permission"),
+              ),
+              const SizedBox(height: 10.0),
+              TextButton(
+                onPressed: () async {
+                  if (await FlutterOverlayWindow.isActive()) return;
+                  await FlutterOverlayWindow.showOverlay(
+                    enableDrag: true,
+                    overlayTitle: "X-SLAYER",
+                    overlayContent: 'Overlay Enabled',
+                    flag: OverlayFlag.defaultFlag,
+                    visibility: NotificationVisibility.visibilityPublic,
+                    positionGravity: PositionGravity.auto,
+                    height: (MediaQuery.of(context).size.height * 0.6).toInt(),
+                    width: WindowSize.matchParent,
+                    startPosition: const OverlayPosition(0, -259),
+                  );
+                },
+                child: const Text("Show Overlay"),
+              ),
+              TextButton(
+                onPressed: () async {
+                  if (await FlutterOverlayWindow.isActive()) return;
+                  await FlutterOverlayWindow.showOverlay(
+                    engineId: 'second',
+                    entrypoint: 'overlay2Main',
+                    enableDrag: true,
+                    overlayTitle: "X-SLAYER",
+                    overlayContent: 'Overlay Enabled',
+                    flag: OverlayFlag.defaultFlag,
+                    visibility: NotificationVisibility.visibilityPublic,
+                    positionGravity: PositionGravity.auto,
+                    height: (MediaQuery.of(context).size.height * 0.6).toInt(),
+                    width: WindowSize.matchParent,
+                    startPosition: const OverlayPosition(0, -259),
+                  );
+                },
+                child: const Text("Show 2nd Overlay"),
+              ),
+              const SizedBox(height: 10.0),
+              TextButton(
+                onPressed: () async {
+                  final status = await FlutterOverlayWindow.isActive();
+                  log("Is Active?: $status");
+                },
+                child: const Text("Is Active?"),
+              ),
+              const SizedBox(height: 10.0),
+              TextButton(
+                onPressed: () async {
+                  await FlutterOverlayWindow.resizeOverlay(
+                    WindowSize.matchParent,
+                    (MediaQuery.of(context).size.height * 5).toInt(),
+                    false,
+                  );
+                },
+                child: const Text("Update Overlay"),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await FlutterOverlayWindow.resizeOverlay(
+                    WindowSize.matchParent,
+                    (MediaQuery.of(context).size.height * 5).toInt(),
+                    false,
+                    engineId: 'second',
+                  );
+                },
+                child: const Text("Update 2nd Overlay"),
+              ),
+              const SizedBox(height: 10.0),
+              TextButton(
+                onPressed: () {
+                  log('Try to close');
+                  FlutterOverlayWindow.closeOverlay().then((value) => log('STOPPED: alue: $value'));
+                },
+                child: const Text("Close Overlay"),
+              ),
+              TextButton(
+                onPressed: () {
+                  log('Try to close');
+                  FlutterOverlayWindow.closeOverlay(engineId: 'second').then((value) => log('STOPPED: alue: $value'));
+                },
+                child: const Text("Close 2nd Overlay"),
+              ),
+              const SizedBox(height: 20.0),
+              TextButton(
+                onPressed: () {
+                  homePort ??= IsolateNameServer.lookupPortByName(_kPortNameOverlay);
+                  homePort?.send('Send to overlay: ${DateTime.now()}');
+                },
+                child: const Text("Send message to overlay"),
+              ),
+              const SizedBox(height: 20.0),
+              TextButton(
+                onPressed: () {
+                  FlutterOverlayWindow.getOverlayPosition().then((value) {
+                    log('Overlay Position: $value');
+                    setState(() {
+                      latestMessageFromOverlay = 'Overlay Position: $value';
+                    });
                   });
-                });
-              },
-              child: const Text("Get overlay position"),
-            ),
-            const SizedBox(height: 20.0),
-            TextButton(
-              onPressed: () {
-                FlutterOverlayWindow.moveOverlay(
-                  const OverlayPosition(0, 0),
-                );
-              },
-              child: const Text("Move overlay position to (0, 0)"),
-            ),
-            const SizedBox(height: 20),
-            Text(latestMessageFromOverlay ?? ''),
-          ],
+                },
+                child: const Text("Get overlay position"),
+              ),
+              TextButton(
+                onPressed: () {
+                  FlutterOverlayWindow.getOverlayPosition(engineId: 'second').then((value) {
+                    log('Overlay Position: $value');
+                    setState(() {
+                      latestMessageFromOverlay = 'Overlay Position: $value';
+                    });
+                  });
+                },
+                child: const Text("Get 2nd overlay position"),
+              ),
+              const SizedBox(height: 20.0),
+              TextButton(
+                onPressed: () {
+                  FlutterOverlayWindow.moveOverlay(
+                    const OverlayPosition(0, 0),
+                  );
+                },
+                child: const Text("Move overlay position to (0, 0)"),
+              ),
+          
+              TextButton(
+                onPressed: () {
+                  FlutterOverlayWindow.moveOverlay(
+                    const OverlayPosition(0, 0),
+                    engineId: 'second'
+                  );
+                },
+                child: const Text("Move 2nd overlay position to (0, 0)"),
+              ),
+              const SizedBox(height: 20),
+              Text(latestMessageFromOverlay ?? ''),
+            ],
+          ),
         ),
       ),
     );
