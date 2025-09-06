@@ -4,4 +4,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application>
+
+        <activity
+            android:name="flutter.overlay.window.flutter_overlay_window.PipActivity"
+            android:exported="false"
+            android:supportsPictureInPicture="true"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|locale|fontScale|uiMode"
+            android:hardwareAccelerated="true"
+            />
+
+    </application>
 </manifest>

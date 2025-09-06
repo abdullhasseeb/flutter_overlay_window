@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_overlay_window/src/models/overlay_position.dart';
 import 'package:flutter_overlay_window/src/overlay_config.dart';
@@ -9,12 +10,21 @@ class FlutterOverlayWindow {
   FlutterOverlayWindow._();
 
   static final StreamController _controller = StreamController();
-  static const MethodChannel _channel =
-      MethodChannel("x-slayer/overlay_channel");
-  static const MethodChannel _overlayChannel =
-      MethodChannel("x-slayer/overlay");
+  static const MethodChannel _channel = MethodChannel("x-slayer/overlay_channel");
+
+  static MethodChannel _overlayChannel(String engineId) => MethodChannel('x-slayer/overlay/$engineId');
   static const BasicMessageChannel _overlayMessageChannel =
-      BasicMessageChannel("x-slayer/overlay_messenger", JSONMessageCodec());
+  BasicMessageChannel("x-slayer/overlay_messenger", JSONMessageCodec());
+
+  // flutter_overlay_window.dart (Dart wrapper)
+  static const String _baseMessenger = "x-slayer/overlay_messenger";
+
+// Per-engine message channel (what OverlayService uses to rebroadcast)
+  static BasicMessageChannel _engineMsg(String engineId) =>
+      BasicMessageChannel(
+        "x-slayer/overlay_messenger/$engineId",
+        JSONMessageCodec(),
+      );
 
   /// Open overLay content
   ///
@@ -39,6 +49,12 @@ class FlutterOverlayWindow {
   /// `positionGravity` the overlay postion after drag and default is [PositionGravity.none]
   ///
   /// `startPosition` the overlay start position and default is null
+  ///
+  /// `entrypoint` the Dart top-level function to run for this overlay engine (default: `overlayMain`)
+  ///
+  /// `engineId` a unique cache key for the engine to use/create (default: `main_engine`)
+  ///
+  /// `initialRoute` optional initial Flutter route for the overlay engine
   static Future<void> showOverlay({
     int height = WindowSize.fullCover,
     int width = WindowSize.matchParent,
@@ -50,6 +66,13 @@ class FlutterOverlayWindow {
     bool enableDrag = false,
     PositionGravity positionGravity = PositionGravity.none,
     OverlayPosition? startPosition,
+
+    // NEW:
+    String entrypoint = 'overlayMain',
+    String engineId = 'tray_engine',
+    String? initialRoute,
+    List<String>? dartArgs,
+
   }) async {
     await _channel.invokeMethod(
       'showOverlay',
@@ -64,8 +87,19 @@ class FlutterOverlayWindow {
         "notificationVisibility": visibility.name,
         "positionGravity": positionGravity.name,
         "startPosition": startPosition?.toMap(),
+
+        // NEW:
+        "entrypoint": entrypoint,
+        "engineId": engineId,
+        "initialRoute": initialRoute,
+        "dartArgs": dartArgs,
       },
     );
+  }
+
+  static Future<bool> showYouTubePip(String url) async {
+    final ok = await _channel.invokeMethod<bool>('showYouTubePip', {"url": url});
+    return ok ?? false;
   }
 
   /// Check if overlay permission is granted
@@ -90,9 +124,27 @@ class FlutterOverlayWindow {
   }
 
   /// Closes overlay if open
-  static Future<bool?> closeOverlay() async {
-    final bool? _res = await _channel.invokeMethod('closeOverlay');
-    return _res;
+  static Future<bool?> closeOverlay({String engineId = 'tray_engine'}) async {
+    try {
+      final bool? _res = await _channel.invokeMethod('closeOverlay', {
+        "engineId": engineId,
+      });
+      return _res;
+    } catch (e) {
+      debugPrint('Error while close overlay: $e');
+      return false;
+    }
+  }
+
+  /// Closes overlay if open
+  static Future<bool?> closeAllOverlays() async {
+    try {
+      final bool? _res = await _channel.invokeMethod('closeAllOverlays');
+      return _res;
+    } catch (e) {
+      debugPrint('Error while close overlay: $e');
+      return false;
+    }
   }
 
   /// Broadcast data to and from overlay app
@@ -100,37 +152,58 @@ class FlutterOverlayWindow {
     return await _overlayMessageChannel.send(data);
   }
 
-  /// Streams message shared between overlay and main app
-  static Stream<dynamic> get overlayListener {
-    _overlayMessageChannel.setMessageHandler((message) async {
-      _controller.add(message);
-      return message;
+  // /// Streams message shared between overlay and main app
+  // static Stream<dynamic> get overlayListener {
+  //   _overlayMessageChannel.setMessageHandler((message) async {
+  //     _controller.add(message);
+  //     return message;
+  //   });
+  //   return _controller.stream;
+  // }
+
+  // Stream for a specific engineId
+  static Stream<dynamic> overlayListener(String engineId) {
+    final ctrl = StreamController.broadcast();
+    _engineMsg(engineId).setMessageHandler((message) async {
+      ctrl.add(message);
+      return true; // ack
     });
-    return _controller.stream;
+    return ctrl.stream;
   }
 
   /// Update the overlay flag while the overlay in action
-  static Future<bool?> updateFlag(OverlayFlag flag) async {
-    final bool? _res = await _overlayChannel
-        .invokeMethod<bool?>('updateFlag', {'flag': flag.name});
+  static Future<bool?> updateFlag(OverlayFlag flag, {String engineId = 'tray_engine'}) async {
+    final bool? _res = await _overlayChannel(engineId).invokeMethod<bool?>('updateFlag', {'flag': flag.name});
     return _res;
   }
 
   /// Update the overlay size in the screen
-  static Future<bool?> resizeOverlay(
-    int width,
-    int height,
-    bool enableDrag,
-  ) async {
-    final bool? _res = await _overlayChannel.invokeMethod<bool?>(
+  // flutter_overlay_window.dart
+  static Future<bool?> resizeOverlay(int width,
+      int height,
+      bool enableDrag, {
+        int duration = 0,
+        String engineId = 'tray_engine',
+
+        // NEW: anchor flags so Java can know which edge to pin
+        bool anchorLeft = false, // left grip: true  (pin RIGHT edge)
+        bool anchorTop = false, // top grip:  true  (pin BOTTOM edge)
+      }) async {
+    final bool? res = await _channel.invokeMethod<bool?>(
       'resizeOverlay',
       {
+        'engineId': engineId, // ✅ add this
         'width': width,
         'height': height,
         'enableDrag': enableDrag,
+        'duration': duration,
+
+        // pass through to Java
+        'anchorLeft': anchorLeft,
+        'anchorTop': anchorTop,
       },
     );
-    return _res;
+    return res;
   }
 
   /// Update the overlay position in the screen
@@ -138,10 +211,14 @@ class FlutterOverlayWindow {
   /// `position` the new position of the overlay
   ///
   /// `return` true if the position updated successfully
-  static Future<bool?> moveOverlay(OverlayPosition position) async {
+  static Future<bool?> moveOverlay(OverlayPosition position, {String engineId = 'tray_engine'}) async {
     final bool? _res = await _channel.invokeMethod<bool?>(
-      'moveOverlay',
-      position.toMap(),
+        'moveOverlay',
+        {
+          "engineId": engineId,
+          ...position.toMap(),
+        }
+
     );
     return _res;
   }
@@ -149,9 +226,12 @@ class FlutterOverlayWindow {
   /// Get the current overlay position
   ///
   /// `return` the current overlay position
-  static Future<OverlayPosition> getOverlayPosition() async {
+  static Future<OverlayPosition> getOverlayPosition({String engineId = 'tray_engine'}) async {
     final Map<Object?, Object?>? _res = await _channel.invokeMethod(
       'getOverlayPosition',
+      {
+        "engineId": engineId,
+      },
     );
     return OverlayPosition.fromMap(_res);
   }
