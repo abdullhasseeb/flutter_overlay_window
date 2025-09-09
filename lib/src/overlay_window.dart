@@ -152,15 +152,6 @@ class FlutterOverlayWindow {
     return await _overlayMessageChannel.send(data);
   }
 
-  // /// Streams message shared between overlay and main app
-  // static Stream<dynamic> get overlayListener {
-  //   _overlayMessageChannel.setMessageHandler((message) async {
-  //     _controller.add(message);
-  //     return message;
-  //   });
-  //   return _controller.stream;
-  // }
-
   // Stream for a specific engineId
   static Stream<dynamic> overlayListener(String engineId) {
     final ctrl = StreamController.broadcast();
