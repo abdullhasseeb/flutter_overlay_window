@@ -105,6 +105,27 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private Timer mTrayAnimationTimer;
     private TrayAnimationTimerTask mTrayTimerTask;
 
+    public static Map<String, Object> getScreenSize() {
+        if (instance == null || instance.windowManager == null || instance.mResources == null) {
+            return null;
+        }
+        Map<String, Object> size = new HashMap<>();
+        try {
+            Display display = instance.windowManager.getDefaultDisplay();
+            DisplayMetrics metrics = new DisplayMetrics();
+            display.getRealMetrics(metrics);
+
+            float density = instance.mResources.getDisplayMetrics().density;
+            // return logical dp to match your moveOverlay/resize units
+            size.put("width",  metrics.widthPixels  / density);
+            size.put("height", metrics.heightPixels / density);
+        } catch (Throwable t) {
+            size.put("width", 0);
+            size.put("height", 0);
+        }
+        return size;
+    }
+
     private int mapFlagFromString(String flagStr) {
         // Mirror your existing WindowSetup.setFlag mapping
         if (flagStr == null) return WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
@@ -129,8 +150,6 @@ public class OverlayService extends Service implements View.OnTouchListener {
             e.getValue().send(message);
         }
     }
-
-
 
     private int mapGravityFromAlignment(String alignment) {
         // Map your OverlayAlignment.name to Android gravity
@@ -158,6 +177,11 @@ public class OverlayService extends Service implements View.OnTouchListener {
             case "visibilitySecret":
             default:                   return NotificationCompat.VISIBILITY_SECRET;
         }
+    }
+
+
+    public static boolean hasOverlay(String engineId) {
+        return instance != null && instance.views.containsKey(engineId);
     }
 
     @Nullable
@@ -580,6 +604,35 @@ public class OverlayService extends Service implements View.OnTouchListener {
         } else {
             if (result != null) result.success(false);
         }
+    }
+
+    // Add a helper in OverlayService.java
+    private void cancelSnapTimerIfAny() {
+        try {
+            if (mTrayTimerTask != null) mTrayTimerTask.cancel();
+            if (mTrayAnimationTimer != null) mTrayAnimationTimer.cancel();
+        } catch (Throwable ignored) {}
+    }
+    public static boolean moveOverlayAbsolute(String engineId, int x, int y) {
+        if (instance != null && instance.views.containsKey(engineId)) {
+            FlutterView v = instance.views.get(engineId);
+            if (instance.windowManager != null) {
+                // stop any snap animation
+                instance.cancelSnapTimerIfAny();
+                EngineConfig cfg = instance.configs.get(engineId);
+                if (cfg != null) cfg.positionGravity = "none";
+
+                WindowManager.LayoutParams params = (WindowManager.LayoutParams) v.getLayoutParams();
+                // normalize to absolute top-left
+                params.gravity = Gravity.TOP | Gravity.LEFT;
+                params.x = (x == -1999 || x == -1) ? -1 : instance.dpToPx(x);
+                params.y = instance.dpToPx(y);
+                instance.clampToScreen(params);
+                try { instance.windowManager.updateViewLayout(v, params); } catch (Throwable ignored) {}
+                return true;
+            }
+        }
+        return false;
     }
 
     public static Map<String, Double> getCurrentPosition(String engineId) {

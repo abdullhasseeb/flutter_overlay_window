@@ -123,13 +123,29 @@ public class FlutterOverlayWindowPlugin implements
             context.startService(intent);
             result.success(null);
         } else if (call.method.equals("isOverlayActive")) {
-            result.success(OverlayService.isRunning);
+            String engineId = call.argument("engineId");
+            if (engineId == null || engineId.isEmpty()) engineId = OverlayConstants.CACHED_TAG;
+            result.success(OverlayService.hasOverlay(engineId));
             return;
         } else if (call.method.equals("moveOverlay")) {
             String engineId = call.argument("engineId");
             int x = call.argument("x");
             int y = call.argument("y");
             result.success(OverlayService.moveOverlay(engineId != null ? engineId : OverlayConstants.CACHED_TAG, x, y));
+        } else if (call.method.equals("moveOverlayAbsolute")) {
+            String engineId = call.argument("engineId");
+            int x = call.argument("x");
+            int y = call.argument("y");
+            boolean ok = OverlayService.moveOverlayAbsolute(
+                    engineId != null ? engineId : OverlayConstants.CACHED_TAG, x, y
+            );
+            result.success(ok);
+            return;
+        } else if (call.method.equals("getScreenSize")) {
+
+                Map<String, Object> size = OverlayService.getScreenSize();
+                result.success(size);
+
         } else if (call.method.equals("getOverlayPosition")) {
             String engineId = call.argument("engineId");
             result.success(OverlayService.getCurrentPosition(engineId != null ? engineId : OverlayConstants.CACHED_TAG));
@@ -192,7 +208,6 @@ public class FlutterOverlayWindowPlugin implements
         Log.d("OverlayPlugin", "onMessage received from Dart: " + String.valueOf(message));
         reply.reply(true);  // send back an ack so Dart Future completes
     }
-
 
 
     @Override

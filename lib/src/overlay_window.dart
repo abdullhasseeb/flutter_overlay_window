@@ -214,6 +214,26 @@ class FlutterOverlayWindow {
     return _res;
   }
 
+  static Future<bool?> moveOverlayAbsolute(OverlayPosition position, {String engineId = 'tray_engine'}) async {
+    final bool? _res = await _channel.invokeMethod<bool?>(
+      'moveOverlayAbsolute',
+      {
+        "engineId": engineId,
+        ...position.toMap(),
+      },
+    );
+    return _res;
+  }
+
+  static Future<Size> getScreenSize() async {
+    final Map<Object?, Object?>? res =
+    await _channel.invokeMethod('getScreenSize');
+    final w = (res?['width'] as num?)?.toDouble() ?? 0;
+    final h = (res?['height'] as num?)?.toDouble() ?? 0;
+    return Size(w, h);
+  }
+
+
   /// Get the current overlay position
   ///
   /// `return` the current overlay position
@@ -228,9 +248,12 @@ class FlutterOverlayWindow {
   }
 
   /// Check if the current overlay is active
-  static Future<bool> isActive() async {
-    final bool? _res = await _channel.invokeMethod<bool?>('isOverlayActive');
-    return _res ?? false;
+  static Future<bool> isActive({String? engineId}) async {
+      // per-engine
+      final ok = await _channel.invokeMethod<bool>('isOverlayActive', {
+        'engineId': engineId,
+      });
+      return ok ?? false;
   }
 
   /// Dispose overlay stream
