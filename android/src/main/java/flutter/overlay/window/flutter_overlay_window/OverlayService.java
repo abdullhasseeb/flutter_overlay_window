@@ -57,12 +57,16 @@ final class EngineConfig {
     int gravity;                  // WindowManager gravity
     int flag;                     // Window flag (focusable/not, etc.)
     boolean enableDrag;
+    boolean enableCloseOnDrag;    // Close on drag functionality
     String positionGravity;       // "none" | "auto" | "left" | "right"
     int notificationVisibility;   // NotificationCompat visibility (or WindowSetup's int)
     String overlayTitle;
     String overlayContent;
 
-    EngineConfig() {}
+    EngineConfig() {
+        // Set default values
+        this.enableCloseOnDrag = false; // Default to false
+    }
 }
 
 public class OverlayService extends Service implements View.OnTouchListener {
@@ -255,14 +259,19 @@ public class OverlayService extends Service implements View.OnTouchListener {
                                         int width,
                                         int height,
                                         boolean enableDrag,
+                                        boolean enableCloseOnDrag, // Parameter for close functionality
                                         int durationMs,
                                         boolean anchorLeft,
                                         boolean anchorTop) {
+
         if (instance == null) return false;
         FlutterView v = instance.views.get(engineId);
         if (v == null) return false;
         // delegate to the real method; pass null for MethodChannel.Result
-        instance.resizeOverlayFor(engineId, v, width, height, enableDrag, durationMs, anchorLeft, anchorTop, null);
+        instance.resizeOverlayFor(engineId, v, width, height,
+                enableDrag, enableCloseOnDrag,
+                durationMs, anchorLeft, anchorTop, null);
+
         return true;
     }
 
@@ -329,6 +338,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
         cfg.gravity = mapGravityFromAlignment(alignment);
         cfg.flag = mapFlagFromString(flagStr);
         cfg.enableDrag = enableDrag;
+        // Note: enableCloseOnDrag is NOT set from showOverlay intent anymore
+        // It will only be set when resizeOverlay is called
         cfg.positionGravity = (positionGravity != null) ? positionGravity : "none";
         cfg.overlayTitle = overlayTitle;
         cfg.overlayContent = overlayContent != null ? overlayContent : "";
@@ -422,10 +433,13 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 int width = call.argument("width");
                 int height = call.argument("height");
                 final boolean newEnableDrag = call.argument("enableDrag");
+                Boolean enableCloseOnDragObj = call.argument("enableCloseOnDrag"); // Get from resizeOverlay
+                final boolean newEnableCloseOnDrag = enableCloseOnDragObj != null ? enableCloseOnDragObj : false;
                 Integer duration = call.argument("duration");
                 Boolean anchorLeft = call.argument("anchorLeft");
                 Boolean anchorTop = call.argument("anchorTop");
-                resizeOverlayFor(engineId, flutterView, width, height, newEnableDrag,
+                resizeOverlayFor(engineId, flutterView, width, height,
+                        newEnableDrag, newEnableCloseOnDrag,
                         duration == null ? 500 : duration,
                         anchorLeft != null && anchorLeft,
                         anchorTop != null && anchorTop,
@@ -536,16 +550,17 @@ public class OverlayService extends Service implements View.OnTouchListener {
         else if (p.y > maxY) p.y = maxY;
     }
 
-    // Keep this signature (with anchorLeft/anchorTop)
+    // This method now updates the enableCloseOnDrag setting when resizing
     private void resizeOverlayFor(
             String engineId,
             FlutterView view,
             int width,
             int height,
             boolean enableDrag,
+            boolean enableCloseOnDrag, // This now controls close functionality
             int durationMs,
-            boolean anchorLeft,   // true = keep RIGHT edge fixed (left grip)
-            boolean anchorTop,    // true = keep BOTTOM edge fixed (top grip)
+            boolean anchorLeft,
+            boolean anchorTop,
             MethodChannel.Result result
     ) {
         EngineConfig cfg = configs.get(engineId);
@@ -553,7 +568,9 @@ public class OverlayService extends Service implements View.OnTouchListener {
             if (result != null) result.success(false);
             return;
         }
+
         cfg.enableDrag = enableDrag;
+        cfg.enableCloseOnDrag = enableCloseOnDrag; // Update the config with the new setting
 
         final WindowManager.LayoutParams params = (WindowManager.LayoutParams) view.getLayoutParams();
 
@@ -877,8 +894,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
                     lastY = event.getRawY();
                     dragging = false;
 
-                    // Show close target when starting to drag
-                    if (closeTargetHelper != null && !closeTargetShown) {
+                    // Show close target when starting to drag (only if enabled for this overlay)
+                    if (cfg.enableCloseOnDrag && closeTargetHelper != null && !closeTargetShown) {
                         closeTargetHelper.showCloseTarget();
                         closeTargetShown = true;
                     }
@@ -899,8 +916,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
                     p.y += Math.round(dy);
                     windowManager.updateViewLayout(touched, p);
 
-                    // Check if overlay is over close target
-                    if (closeTargetHelper != null && closeTargetShown) {
+                    // Check if overlay is over close target (only if enabled)
+                    if (cfg.enableCloseOnDrag && closeTargetHelper != null && closeTargetShown) {
                         if (closeTargetHelper.isOverlapping(p)) {
                             closeTargetHelper.highlightCloseTarget();
                         } else {

@@ -86,7 +86,7 @@ public class FlutterOverlayWindowPlugin implements
             String overlayContent = call.argument("overlayContent");
             String notificationVisibility = call.argument("notificationVisibility");
             boolean enableDrag = call.argument("enableDrag");
-            boolean enableCloseOnDrag = call.argument("enableCloseOnDrag"); // NEW: Get the parameter from Flutter
+            // REMOVED: enableCloseOnDrag is no longer passed from showOverlay
             String positionGravity = call.argument("positionGravity");
             Map<String, Integer> startPosition = call.argument("startPosition");
             int startX = startPosition != null ? startPosition.getOrDefault("x", OverlayConstants.DEFAULT_XY) : OverlayConstants.DEFAULT_XY;
@@ -101,13 +101,13 @@ public class FlutterOverlayWindowPlugin implements
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
 
-            // Pass raw config to service (no globals!)
+            // Pass raw config to service (no longer including enableCloseOnDrag)
             intent.putExtra("widthDp", width != null ? width : -1);
             intent.putExtra("heightDp", height != null ? height : -1);
             intent.putExtra("alignment", alignment != null ? alignment : "center"); // service will convert to gravity
             intent.putExtra("flagStr", flag != null ? flag : "flagNotFocusable");
             intent.putExtra("enableDrag", enableDrag);
-            intent.putExtra("enableCloseOnDrag", enableCloseOnDrag); // NEW: Pass to service
+            // REMOVED: enableCloseOnDrag is not passed from showOverlay anymore
             intent.putExtra("positionGravity", positionGravity != null ? positionGravity : "none");
             intent.putExtra("overlayTitle", overlayTitle);
             intent.putExtra("overlayContent", overlayContent == null ? "" : overlayContent);
@@ -166,7 +166,7 @@ public class FlutterOverlayWindowPlugin implements
         } else if (call.method.equals("closeAllOverlays")) {
             if (OverlayService.isRunning) {
                 final Intent i = new Intent(context, OverlayService.class);
-                context.stopService(i); // 🔴 kills the whole service, all overlays gone
+                context.stopService(i); // kills the whole service, all overlays gone
                 result.success(true);
             } else {
                 result.success(false);
@@ -184,13 +184,16 @@ public class FlutterOverlayWindowPlugin implements
             int width = call.argument("width");
             int height = call.argument("height");
             boolean enableDrag = call.argument("enableDrag");
+            // NEW: enableCloseOnDrag is now controlled from resizeOverlay
+            Boolean enableCloseOnDragObj = call.argument("enableCloseOnDrag");
+            boolean enableCloseOnDrag = enableCloseOnDragObj != null ? enableCloseOnDragObj : false;
             Integer duration = call.argument("duration");
             Boolean anchorLeft = call.argument("anchorLeft");
             Boolean anchorTop = call.argument("anchorTop");
 
             boolean ok = OverlayService.requestResize(
                     engineId != null ? engineId : OverlayConstants.CACHED_TAG,
-                    width, height, enableDrag,
+                    width, height, enableDrag, enableCloseOnDrag, // Pass enableCloseOnDrag to resize
                     duration == null ? 0 : duration,
                     anchorLeft != null && anchorLeft,
                     anchorTop != null && anchorTop
@@ -239,15 +242,6 @@ public class FlutterOverlayWindowPlugin implements
         this.mActivity = null;
     }
 
-//    @Override
-//    public void onMessage(@Nullable Object message, @NonNull BasicMessageChannel.Reply reply) {
-//        BasicMessageChannel overlayMessageChannel = new BasicMessageChannel(
-//                FlutterEngineCache.getInstance().get(OverlayConstants.CACHED_TAG)
-//                        .getDartExecutor(),
-//                OverlayConstants.MESSENGER_TAG, JSONMessageCodec.INSTANCE);
-//        overlayMessageChannel.send(message, reply);
-//    }
-
     private boolean checkOverlayPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             return Settings.canDrawOverlays(context);
@@ -263,5 +257,4 @@ public class FlutterOverlayWindowPlugin implements
         }
         return false;
     }
-
 }
