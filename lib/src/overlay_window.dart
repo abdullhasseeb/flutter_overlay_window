@@ -93,6 +93,7 @@ class FlutterOverlayWindow {
         "engineId": engineId,
         "initialRoute": initialRoute,
         "dartArgs": dartArgs,
+        'enableCloseOnDrag': true
       },
     );
   }
@@ -175,10 +176,12 @@ class FlutterOverlayWindow {
       bool enableDrag, {
         int duration = 0,
         String engineId = 'tray_engine',
+        bool closeButtonOnDrag = false,
 
         // NEW: anchor flags so Java can know which edge to pin
         bool anchorLeft = false, // left grip: true  (pin RIGHT edge)
         bool anchorTop = false, // top grip:  true  (pin BOTTOM edge)
+
       }) async {
     final bool? res = await _channel.invokeMethod<bool?>(
       'resizeOverlay',
@@ -192,6 +195,7 @@ class FlutterOverlayWindow {
         // pass through to Java
         'anchorLeft': anchorLeft,
         'anchorTop': anchorTop,
+        'enableCloseOnDrag': closeButtonOnDrag
       },
     );
     return res;
@@ -249,15 +253,27 @@ class FlutterOverlayWindow {
 
   /// Check if the current overlay is active
   static Future<bool> isActive({String? engineId}) async {
-      // per-engine
-      final ok = await _channel.invokeMethod<bool>('isOverlayActive', {
-        'engineId': engineId,
-      });
-      return ok ?? false;
+    // per-engine
+    final ok = await _channel.invokeMethod<bool>('isOverlayActive', {
+      'engineId': engineId,
+    });
+    return ok ?? false;
   }
 
   /// Dispose overlay stream
   static void disposeOverlayListener() {
     _controller.close();
   }
+
+  /// Make the Overlay Can be removed by dragging bottom
+  static Future<bool> setCloseOnDrag({
+    required String engineId,
+    required bool enabled,
+  }) async {
+    final ok = await _overlayChannel(engineId).invokeMethod<bool>('setCloseOnDrag', {
+      'enabled': enabled,
+    });
+    return ok ?? false;
+  }
+
 }
