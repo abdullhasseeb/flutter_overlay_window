@@ -25,7 +25,7 @@ public class CloseTargetHelper {
     private View closeTargetView;
     private WindowManager.LayoutParams closeTargetParams;
     private ObjectAnimator pulseAnimator;
-    private ObjectAnimator attractAnimator;
+    private ValueAnimator attractAnimator; // Changed from ObjectAnimator to ValueAnimator
     private boolean isHighlighted = false;
 
     public CloseTargetHelper(Context context, WindowManager windowManager, Point screenSize) {
@@ -228,8 +228,7 @@ public class CloseTargetHelper {
                 }
             });
             animator.start();
-            attractAnimator = ObjectAnimator.ofInt(0, 1); // Dummy animator to keep reference
-            attractAnimator = (ObjectAnimator) animator;
+            attractAnimator = animator; // Now correctly assigning ValueAnimator to ValueAnimator
         }
     }
 
