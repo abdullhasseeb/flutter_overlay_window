@@ -1,6 +1,5 @@
 package flutter.overlay.window.flutter_overlay_window;
 
-
 import android.view.Gravity;
 import android.view.WindowManager;
 
@@ -14,13 +13,18 @@ public abstract class WindowSetup {
     static int width = WindowManager.LayoutParams.MATCH_PARENT;
     static int flag = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
     static int gravity = Gravity.CENTER;
+
+    // Original messenger for sending FROM main app TO overlays
     static BasicMessageChannel<Object> messenger = null;
+
+    // NEW: Messenger for sending FROM overlays TO main app
+    static BasicMessageChannel<Object> mainAppMessenger = null;
+
     static String overlayTitle = "Overlay is activated";
     static String overlayContent = "Tap to edit settings or disable";
     static String positionGravity = "none";
     static int notificationVisibility = NotificationCompat.VISIBILITY_PRIVATE;
     static boolean enableDrag = false;
-
 
     static void setNotificationVisibility(String name) {
         if (name.equalsIgnoreCase("visibilityPublic")) {
@@ -96,6 +100,5 @@ public abstract class WindowSetup {
             gravity = Gravity.BOTTOM | Gravity.RIGHT;
             return;
         }
-
     }
 }
