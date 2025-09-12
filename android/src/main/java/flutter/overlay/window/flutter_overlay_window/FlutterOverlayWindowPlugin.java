@@ -43,6 +43,9 @@ public class FlutterOverlayWindowPlugin implements
     private Context context;
     private Activity mActivity;
     private BasicMessageChannel<Object> messenger;
+
+    // NEW: Main app messenger for receiving messages from overlays
+    private BasicMessageChannel<Object> mainAppMessenger;
     private Result pendingResult;
 
     @Override
@@ -51,12 +54,26 @@ public class FlutterOverlayWindowPlugin implements
         channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), OverlayConstants.CHANNEL_TAG);
         channel.setMethodCallHandler(this);
 
+        // Original messenger for sending TO overlays
         messenger = new BasicMessageChannel(flutterPluginBinding.getBinaryMessenger(), OverlayConstants.MESSENGER_TAG,
                 JSONMessageCodec.INSTANCE);
         messenger.setMessageHandler(this);
 
-        // This line is likely unnecessary and can be removed, but is harmless.
+        // NEW: Main app messenger for receiving FROM overlays
+        mainAppMessenger = new BasicMessageChannel(flutterPluginBinding.getBinaryMessenger(),
+                OverlayConstants.MAIN_APP_MESSENGER_TAG, JSONMessageCodec.INSTANCE);
+        mainAppMessenger.setMessageHandler(new BasicMessageChannel.MessageHandler<Object>() {
+            @Override
+            public void onMessage(@Nullable Object message, @NonNull BasicMessageChannel.Reply<Object> reply) {
+                // This handles messages coming FROM overlays TO main app
+                Log.d("OverlayPlugin", "Main app received message from overlay: " + String.valueOf(message));
+                reply.reply(true); // Send acknowledgment back to overlay
+            }
+        });
+
+        // Register main app messenger with OverlayService so overlays can send messages to main app
         WindowSetup.messenger = messenger;
+        WindowSetup.mainAppMessenger = mainAppMessenger; // NEW
     }
 
     @RequiresApi(api = Build.VERSION_CODES.N)
@@ -86,7 +103,6 @@ public class FlutterOverlayWindowPlugin implements
             String overlayContent = call.argument("overlayContent");
             String notificationVisibility = call.argument("notificationVisibility");
             boolean enableDrag = call.argument("enableDrag");
-            // REMOVED: enableCloseOnDrag is no longer passed from showOverlay
             String positionGravity = call.argument("positionGravity");
             Map<String, Integer> startPosition = call.argument("startPosition");
             int startX = startPosition != null ? startPosition.getOrDefault("x", OverlayConstants.DEFAULT_XY) : OverlayConstants.DEFAULT_XY;
@@ -101,13 +117,12 @@ public class FlutterOverlayWindowPlugin implements
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
 
-            // Pass raw config to service (no longer including enableCloseOnDrag)
+            // Pass raw config to service
             intent.putExtra("widthDp", width != null ? width : -1);
             intent.putExtra("heightDp", height != null ? height : -1);
-            intent.putExtra("alignment", alignment != null ? alignment : "center"); // service will convert to gravity
+            intent.putExtra("alignment", alignment != null ? alignment : "center");
             intent.putExtra("flagStr", flag != null ? flag : "flagNotFocusable");
             intent.putExtra("enableDrag", enableDrag);
-            // REMOVED: enableCloseOnDrag is not passed from showOverlay anymore
             intent.putExtra("positionGravity", positionGravity != null ? positionGravity : "none");
             intent.putExtra("overlayTitle", overlayTitle);
             intent.putExtra("overlayContent", overlayContent == null ? "" : overlayContent);
@@ -124,6 +139,12 @@ public class FlutterOverlayWindowPlugin implements
 
             context.startService(intent);
             result.success(null);
+        } else if (call.method.equals("sendMessageToOverlays")) {
+            // NEW: Method to send messages from main app to overlays
+            Object message = call.argument("message");
+            String targetEngineId = call.argument("engineId"); // Optional: target specific overlay
+            OverlayService.sendMessageFromMainApp(message, targetEngineId);
+            result.success(true);
         } else if (call.method.equals("isOverlayActive")) {
             String engineId = call.argument("engineId");
             if (engineId == null || engineId.isEmpty()) engineId = OverlayConstants.CACHED_TAG;
@@ -144,20 +165,18 @@ public class FlutterOverlayWindowPlugin implements
             result.success(ok);
             return;
         } else if (call.method.equals("getScreenSize")) {
-
             Map<String, Object> size = OverlayService.getScreenSize();
             result.success(size);
-
         } else if (call.method.equals("getOverlayPosition")) {
             String engineId = call.argument("engineId");
             result.success(OverlayService.getCurrentPosition(engineId != null ? engineId : OverlayConstants.CACHED_TAG));
         } else if (call.method.equals("closeOverlay")) {
-            String engineId = call.argument("engineId"); // get engineId from Dart
+            String engineId = call.argument("engineId");
             if (OverlayService.isRunning) {
                 final Intent i = new Intent(context, OverlayService.class);
                 i.putExtra("engineId", engineId != null ? engineId : OverlayConstants.CACHED_TAG);
                 i.putExtra(OverlayService.INTENT_EXTRA_IS_CLOSE_WINDOW, true);
-                context.startService(i); // tell service to close only this engineId
+                context.startService(i);
                 result.success(true);
             } else {
                 result.success(false);
@@ -166,7 +185,7 @@ public class FlutterOverlayWindowPlugin implements
         } else if (call.method.equals("closeAllOverlays")) {
             if (OverlayService.isRunning) {
                 final Intent i = new Intent(context, OverlayService.class);
-                context.stopService(i); // kills the whole service, all overlays gone
+                context.stopService(i);
                 result.success(true);
             } else {
                 result.success(false);
@@ -184,7 +203,6 @@ public class FlutterOverlayWindowPlugin implements
             int width = call.argument("width");
             int height = call.argument("height");
             boolean enableDrag = call.argument("enableDrag");
-            // NEW: enableCloseOnDrag is now controlled from resizeOverlay
             Boolean enableCloseOnDragObj = call.argument("enableCloseOnDrag");
             boolean enableCloseOnDrag = enableCloseOnDragObj != null ? enableCloseOnDragObj : false;
             Integer duration = call.argument("duration");
@@ -193,7 +211,7 @@ public class FlutterOverlayWindowPlugin implements
 
             boolean ok = OverlayService.requestResize(
                     engineId != null ? engineId : OverlayConstants.CACHED_TAG,
-                    width, height, enableDrag, enableCloseOnDrag, // Pass enableCloseOnDrag to resize
+                    width, height, enableDrag, enableCloseOnDrag,
                     duration == null ? 0 : duration,
                     anchorLeft != null && anchorLeft,
                     anchorTop != null && anchorTop
@@ -203,22 +221,25 @@ public class FlutterOverlayWindowPlugin implements
         } else {
             result.notImplemented();
         }
-
     }
 
     @Override
     public void onMessage(@Nullable Object message, @NonNull BasicMessageChannel.Reply reply) {
+        // This sends messages FROM main app TO overlays
         OverlayService.sendToAll(message);
-        // Log the raw message for debugging
-        Log.d("OverlayPlugin", "onMessage received from Dart: " + String.valueOf(message));
-        reply.reply(true);  // send back an ack so Dart Future completes
+        Log.d("OverlayPlugin", "Main app sending message to overlays: " + String.valueOf(message));
+        reply.reply(true);
     }
-
 
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         channel.setMethodCallHandler(null);
-        WindowSetup.messenger.setMessageHandler(null);
+        if (WindowSetup.messenger != null) {
+            WindowSetup.messenger.setMessageHandler(null);
+        }
+        if (WindowSetup.mainAppMessenger != null) {
+            WindowSetup.mainAppMessenger.setMessageHandler(null);
+        }
     }
 
     @Override
