@@ -448,13 +448,41 @@ public class OverlayService extends Service implements View.OnTouchListener {
             } else if ("isPlatformViewsReady".equals(method)) {
                 result.success(platformViewsReady);
 
+            } else if ("sendToMainApp".equals(method)) {
+                Object message = call.argument("message");
+                sendToMainApp(message);
+                result.success(true);
+
+            } else if ("sendToOtherOverlays".equals(method)) {
+                Object message = call.argument("message");
+                String excludeEngineId = call.argument("excludeEngineId"); // Optional: exclude sender
+
+                for (Map.Entry<String, BasicMessageChannel<Object>> entry : messengers.entrySet()) {
+                    // Skip sender if excludeEngineId is provided
+                    if (excludeEngineId != null && excludeEngineId.equals(entry.getKey())) {
+                        continue;
+                    }
+                    Log.d("OverlayService", "Forwarding message from " + engineId + " to " + entry.getKey() + ": " + message);
+                    entry.getValue().send(message);
+                }
+                result.success(true);
+
             } else {
                 result.notImplemented();
             }
         });
 
         overlayMessageChannel.setMessageHandler((message, reply) -> {
-            WindowSetup.messenger.send(message); // fan-out if you need
+            // Handle messages from THIS overlay
+            Log.d("OverlayService", "Overlay " + engineId + " received message: " + message);
+
+            // Optional: Forward to main app if needed
+            // sendToMainApp(message);
+
+            // Optional: Broadcast to other overlays
+            // WindowSetup.messenger.send(message);
+
+            reply.reply(true); // Acknowledge receipt
         });
 
         int dx = startX == OverlayConstants.DEFAULT_XY ? 0 : startX;
@@ -1001,5 +1029,45 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 }
             });
         }
+    }
+
+    // NEW: Method to send messages FROM overlays TO main app
+    public static void sendToMainApp(Object message) {
+        if (WindowSetup.mainAppMessenger != null) {
+            Log.d("OverlayService", "Sending message to main app: " + message);
+            WindowSetup.mainAppMessenger.send(message);
+        } else {
+            Log.w("OverlayService", "Main app messenger not available");
+        }
+    }
+
+    // NEW: Method to send messages FROM main app TO overlays (with optional targeting)
+    public static void sendMessageFromMainApp(Object message, String targetEngineId) {
+        if (instance == null) {
+            Log.w("OverlayService", "Service instance not available");
+            return;
+        }
+
+        if (targetEngineId != null && !targetEngineId.isEmpty()) {
+            // Send to specific overlay
+            BasicMessageChannel<Object> targetMessenger = instance.messengers.get(targetEngineId);
+            if (targetMessenger != null) {
+                Log.d("OverlayService", "Sending message from main app to overlay " + targetEngineId + ": " + message);
+                targetMessenger.send(message);
+            } else {
+                Log.w("OverlayService", "Target overlay messenger not found: " + targetEngineId);
+            }
+        } else {
+            // Send to all overlays (existing functionality)
+            for (Map.Entry<String, BasicMessageChannel<Object>> entry : instance.messengers.entrySet()) {
+                Log.d("OverlayService", "Sending message from main app to overlay " + entry.getKey() + ": " + message);
+                entry.getValue().send(message);
+            }
+        }
+    }
+
+    // Enhanced version of the existing method with clearer naming
+    public static void sendToAllOverlays(Object message) {
+        sendToAll(message); // Calls existing method
     }
 }
