@@ -26,6 +26,102 @@ class FlutterOverlayWindow {
         JSONMessageCodec(),
       );
 
+
+
+  /// Channel for sending messages FROM main app TO overlays
+  static const BasicMessageChannel<dynamic> _messengerChannel =
+  BasicMessageChannel('x-slayer/overlay_messenger', JSONMessageCodec());
+
+  /// Channel for receiving messages FROM overlays TO main app
+  static const BasicMessageChannel<dynamic> _mainAppMessengerChannel =
+  BasicMessageChannel('x-slayer/main_app_messenger', JSONMessageCodec());
+
+  /// Stream controllers for message handling
+  static StreamController<dynamic>? _overlayMessageStreamController;
+  static StreamController<dynamic>? _mainAppMessageStreamController;
+
+
+  /// Send a message FROM an overlay (the overlay isolate) TO the main app.
+  /// Pass the same `engineId` you used to launch this overlay.
+  static Future<bool> sendToMainApp(dynamic message, {required String engineId}) async {
+    try {
+      // Calls the platform method handler inside OverlayService for THIS overlay engine
+      await _overlayChannel(engineId).invokeMethod('sendToMainApp', {'message': message});
+      return true;
+    } catch (e) {
+      debugPrint('sendToMainApp error: $e');
+      return false;
+    }
+  }
+
+  // Tell native plugin: "THIS engine is the main app. Deliver overlay->app messages here"
+  static Future<void> registerAsMainApp() async {
+    await _channel.invokeMethod('registerMainApp');
+  }
+
+
+  /// Initialize message listeners
+  static void initializeMessageChannels() {
+    // Initialize stream controllers if not already done
+    _overlayMessageStreamController ??= StreamController<dynamic>.broadcast();
+    _mainAppMessageStreamController ??= StreamController<dynamic>.broadcast();
+
+    // Listen for messages FROM overlays TO main app
+    _mainAppMessengerChannel.setMessageHandler((message) async {
+      print('Main app received message from overlay: $message');
+      _mainAppMessageStreamController?.add(message);
+      return true; // Send acknowledgment
+    });
+
+    // Listen for messages FROM main app TO overlays (if needed in main app)
+    _messengerChannel.setMessageHandler((message) async {
+      print('Main app messenger received: $message');
+      _overlayMessageStreamController?.add(message);
+      return true; // Send acknowledgment
+    });
+  }
+
+  /// Stream to listen for messages FROM overlays TO main app
+  static Stream<dynamic> get overlayMessagesStream {
+    initializeMessageChannels();
+    return _mainAppMessageStreamController!.stream;
+  }
+
+  /// Stream to listen for messages FROM main app TO overlays (useful for debugging)
+  static Stream<dynamic> get mainAppMessagesStream {
+    initializeMessageChannels();
+    return _overlayMessageStreamController!.stream;
+  }
+
+  /// Send message FROM main app TO all overlays
+  static Future<bool> sendMessageToOverlays(dynamic message) async {
+    try {
+      await _channel.invokeMethod('sendMessageToOverlays', {
+        'message': message,
+      });
+      return true;
+    } catch (e) {
+      print('Error sending message to overlays: $e');
+      return false;
+    }
+  }
+
+  /// Send message FROM main app TO specific overlay
+  static Future<bool> sendMessageToSpecificOverlay(dynamic message, String engineId) async {
+    try {
+      await _channel.invokeMethod('sendMessageToOverlays', {
+        'message': message,
+        'engineId': engineId,
+      });
+      return true;
+    } catch (e) {
+      print('Error sending message to specific overlay: $e');
+      return false;
+    }
+  }
+
+
+
   /// Open overLay content
   ///
   /// - Optional arguments:
