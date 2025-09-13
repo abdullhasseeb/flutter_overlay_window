@@ -761,21 +761,26 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private void closeOverlayByEngineId(String engineId) {
         if (windowManager != null && views.containsKey(engineId)) {
             FlutterView v = views.get(engineId);
-            try {
-                windowManager.removeView(v);
-            } catch (Throwable ignored) {
-            }
-            try {
-                v.detachFromFlutterEngine();
-            } catch (Throwable ignored) {
-            }
+            FlutterEngine eng = engines.get(engineId);
+            try {windowManager.removeView(v);} catch (Throwable ignored) {}
+            try {v.detachFromFlutterEngine();} catch (Throwable ignored) {}
 
             // Clean up all associated resources
             views.remove(engineId);
-            engines.remove(engineId);
+            //engines.remove(engineId);
             channels.remove(engineId);
             messengers.remove(engineId);
             configs.remove(engineId);
+
+            try { FlutterEngineCache.getInstance().remove(engineId); } catch (Throwable ignore) {}
+
+            // 4) Destroy engine (now that it’s detached and we still have the ref)
+            if (eng != null) {
+                try { eng.destroy(); } catch (Throwable ignored) {}
+            }
+
+            // Finally remove from engines map
+            engines.remove(engineId);
 
             // Hide close target
             if (closeTargetHelper != null) {
@@ -785,6 +790,8 @@ public class OverlayService extends Service implements View.OnTouchListener {
 
             Log.d("OverlayService", "Overlay closed: " + engineId);
         }
+
+
 
         // If no overlays left, stop the service
         if (views.isEmpty()) {
