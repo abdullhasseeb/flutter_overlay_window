@@ -60,28 +60,33 @@ public class FlutterOverlayWindowPlugin implements
         messenger.setMessageHandler(this);
 
         // NEW: Main app messenger for receiving FROM overlays
-        mainAppMessenger = new BasicMessageChannel(flutterPluginBinding.getBinaryMessenger(),
+        mainAppMessenger = new BasicMessageChannel<>(flutterPluginBinding.getBinaryMessenger(),
                 OverlayConstants.MAIN_APP_MESSENGER_TAG, JSONMessageCodec.INSTANCE);
-        mainAppMessenger.setMessageHandler(new BasicMessageChannel.MessageHandler<Object>() {
-            @Override
-            public void onMessage(@Nullable Object message, @NonNull BasicMessageChannel.Reply<Object> reply) {
-                // This handles messages coming FROM overlays TO main app
-                Log.d("OverlayPlugin", "Main app received message from overlay: " + String.valueOf(message));
-                reply.reply(true); // Send acknowledgment back to overlay
-            }
+        mainAppMessenger.setMessageHandler((message, reply) -> {
+            Log.d("OverlayPlugin", "Main app received message: " + String.valueOf(message));
+            reply.reply(true);
         });
 
         // Register main app messenger with OverlayService so overlays can send messages to main app
         WindowSetup.messenger = messenger;
-        WindowSetup.mainAppMessenger = mainAppMessenger; // NEW
+//        WindowSetup.mainAppMessenger = mainAppMessenger; // NEW
     }
 
     @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
         pendingResult = result;
+        //  Check Permission
         if (call.method.equals("checkPermission")) {
             result.success(checkOverlayPermission());
+        }
+        // Register Main App Once at startup
+        else if (call.method.equals("registerMainApp")) {
+            // This plugin instance belongs to whoever called this method.
+            // Mark its messenger as the "main app" sink for overlay->app traffic.
+            WindowSetup.mainAppMessenger = mainAppMessenger;
+            Log.d("OverlayPlugin", "Registered THIS engine as main app sink");
+            result.success(true);
         } else if (call.method.equals("requestPermission")) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION);

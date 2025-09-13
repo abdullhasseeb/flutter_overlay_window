@@ -1037,7 +1037,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
             Log.d("OverlayService", "Sending message to main app: " + message);
             WindowSetup.mainAppMessenger.send(message);
         } else {
-            Log.w("OverlayService", "Main app messenger not available");
+            Log.w("OverlayService", "Main app messenger not registered yet");
         }
     }
 

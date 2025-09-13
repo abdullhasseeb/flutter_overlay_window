@@ -23,9 +23,13 @@ class FlutterOverlayWindow {
   static BasicMessageChannel _engineMsg(String engineId) =>
       BasicMessageChannel(
         "x-slayer/overlay_messenger/$engineId",
-        JSONMessageCodec(),
+        const JSONMessageCodec(),
       );
 
+
+  static Future<void> registerAsMainApp() async {
+    await _channel.invokeMethod('registerMainApp');
+  }
 
 
   /// Channel for sending messages FROM main app TO overlays
@@ -52,11 +56,6 @@ class FlutterOverlayWindow {
       debugPrint('sendToMainApp error: $e');
       return false;
     }
-  }
-
-  // Tell native plugin: "THIS engine is the main app. Deliver overlay->app messages here"
-  static Future<void> registerAsMainApp() async {
-    await _channel.invokeMethod('registerMainApp');
   }
 
 
